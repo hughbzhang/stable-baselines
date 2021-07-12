@@ -301,6 +301,22 @@ class PPO2(ActorCriticRLModel):
 
     def learn(self, total_timesteps, callback=None, log_interval=1, tb_log_name="PPO2",
               reset_num_timesteps=True):
+
+        full_step = self.stepwise_training(total_timesteps, callback, log_interval, tb_log_name, reset_num_timesteps)
+        n_updates = total_timesteps // self.n_batch
+        for update in range(1, n_updates + 1):
+        	if not full_step(update):
+        		break
+
+        self._init_callback(callback).on_training_end()
+
+        return self
+
+    # Decompose training into a setup function (run when this function is called) and return a full_step
+    # function, which can be called repeatedly and runs exactly one full training step
+    def stepwise_training(self, total_timesteps, callback=None, log_interval=1, tb_log_name="PPO2",
+              reset_num_timesteps=True):
+
         # Transform to callable if needed
         self.learning_rate = get_schedule_fn(self.learning_rate)
         self.cliprange = get_schedule_fn(self.cliprange)
@@ -318,7 +334,7 @@ class PPO2(ActorCriticRLModel):
 
             callback.on_training_start(locals(), globals())
 
-            for update in range(1, n_updates + 1):
+            def full_step(update):
                 assert self.n_batch % self.nminibatches == 0, ("The number of minibatches (`nminibatches`) "
                                                                "is not a factor of the total number of samples "
                                                                "collected per rollout (`n_batch`), "
@@ -341,7 +357,7 @@ class PPO2(ActorCriticRLModel):
 
                 # Early stopping due to the callback
                 if not self.runner.continue_training:
-                    break
+                    return False
 
                 self.ep_info_buf.extend(ep_infos)
                 mb_loss_vals = []
@@ -402,9 +418,9 @@ class PPO2(ActorCriticRLModel):
                     for (loss_val, loss_name) in zip(loss_vals, self.loss_names):
                         logger.logkv(loss_name, loss_val)
                     logger.dumpkvs()
+                return True
 
-            callback.on_training_end()
-            return self
+        return full_step
 
     def save(self, save_path, cloudpickle=False):
         data = {
