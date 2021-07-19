@@ -244,6 +244,22 @@ class A2C(ActorCriticRLModel):
     def learn(self, total_timesteps, callback=None, log_interval=100, tb_log_name="A2C",
               reset_num_timesteps=True):
 
+        full_step = self.stepwise_training(total_timesteps,
+                                           callback=callback,
+                                           log_interval=log_interval,
+                                           tb_log_name=tb_log_name,
+                                           reset_num_timesteps=reset_num_timesteps)
+        
+        for update in range(1, total_timesteps // self.n_batch + 1):
+            if not full_step(update):
+                break
+
+        self._init_callback(callback).on_training_end()
+        return self
+
+    def stepwise_training(self, total_timesteps, callback=None, log_interval=100, tb_log_name="A2C",
+              reset_num_timesteps=True):
+
         new_tb_log = self._init_num_timesteps(reset_num_timesteps)
         callback = self._init_callback(callback)
 
@@ -256,8 +272,7 @@ class A2C(ActorCriticRLModel):
             t_start = time.time()
             callback.on_training_start(locals(), globals())
 
-            for update in range(1, total_timesteps // self.n_batch + 1):
-
+            def full_step(update):
                 callback.on_rollout_start()
                 # true_reward is the reward without discount
                 rollout = self.runner.run(callback)
@@ -268,7 +283,7 @@ class A2C(ActorCriticRLModel):
 
                 # Early stopping due to the callback
                 if not self.runner.continue_training:
-                    break
+                    return False
 
                 self.ep_info_buf.extend(ep_infos)
                 _, value_loss, policy_entropy = self._train_step(obs, states, rewards, masks, actions, values,
@@ -295,8 +310,7 @@ class A2C(ActorCriticRLModel):
                         logger.logkv('ep_len_mean', safe_mean([ep_info['l'] for ep_info in self.ep_info_buf]))
                     logger.dump_tabular()
 
-        callback.on_training_end()
-        return self
+        return full_step
 
     def save(self, save_path, cloudpickle=False):
         data = {

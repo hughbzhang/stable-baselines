@@ -302,7 +302,12 @@ class PPO2(ActorCriticRLModel):
     def learn(self, total_timesteps, callback=None, log_interval=1, tb_log_name="PPO2",
               reset_num_timesteps=True):
 
-        full_step = self.stepwise_training(total_timesteps, callback, log_interval, tb_log_name, reset_num_timesteps)
+        full_step = self.stepwise_training(total_timesteps,
+                                           callback=callback,
+                                           log_interval=log_interval,
+                                           tb_log_name=tb_log_name,
+                                           reset_num_timesteps=reset_num_timesteps)
+        
         n_updates = total_timesteps // self.n_batch
         for update in range(1, n_updates + 1):
         	if not full_step(update):

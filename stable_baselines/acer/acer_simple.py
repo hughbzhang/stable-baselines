@@ -550,6 +550,22 @@ class ACER(ActorCriticRLModel):
     def learn(self, total_timesteps, callback=None, log_interval=100, tb_log_name="ACER",
               reset_num_timesteps=True):
 
+        full_step = self.stepwise_training(total_timesteps,
+                                           callback=callback,
+                                           log_interval=log_interval,
+                                           tb_log_name=tb_log_name,
+                                           reset_num_timesteps=reset_num_timesteps)
+
+        for steps in range(0, total_timesteps, self.n_batch):
+            if not full_step(steps):
+                break
+
+        callback.on_training_end()
+        return self
+
+    def stepwise_training(self, total_timesteps, callback=None, log_interval=100, tb_log_name="ACER",
+              reset_num_timesteps=True):
+
         new_tb_log = self._init_num_timesteps(reset_num_timesteps)
         callback = self._init_callback(callback)
 
@@ -571,7 +587,7 @@ class ACER(ActorCriticRLModel):
             callback.on_training_start(locals(), globals())
 
             # n_batch samples, 1 on_policy call and multiple off-policy calls
-            for steps in range(0, total_timesteps, self.n_batch):
+            def full_step(steps):
 
                 callback.on_rollout_start()
 
@@ -581,7 +597,7 @@ class ACER(ActorCriticRLModel):
 
                 # Early stopping due to the callback
                 if not self.runner.continue_training:
-                    break
+                    return False
 
                 episode_stats.feed(rewards, dones)
 
@@ -636,9 +652,7 @@ class ACER(ActorCriticRLModel):
                         self._train_step(obs, actions, rewards, dones, mus, self.initial_state, masks,
                                          self.num_timesteps)
 
-        callback.on_training_end()
-
-        return self
+        return full_step
 
     def save(self, save_path, cloudpickle=False):
         data = {

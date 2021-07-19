@@ -285,6 +285,21 @@ class ACKTR(ActorCriticRLModel):
     def learn(self, total_timesteps, callback=None, log_interval=100, tb_log_name="ACKTR",
               reset_num_timesteps=True):
 
+        full_step = self.stepwise_training(total_timesteps,
+                                           callback=callback,
+                                           log_interval=log_interval,
+                                           tb_log_name=tb_log_name,
+                                           reset_num_timesteps=reset_num_timesteps)
+
+        for update in range(1, total_timesteps // self.n_batch + 1):
+            if not full_step(update):
+                break
+
+        callback.on_training_end()
+        return self
+
+    def stepwise_training(self, total_timesteps, callback=None, log_interval=100, tb_log_name="ACKTR",
+              reset_num_timesteps=True):
         new_tb_log = self._init_num_timesteps(reset_num_timesteps)
         callback = self._init_callback(callback)
 
@@ -329,8 +344,7 @@ class ACKTR(ActorCriticRLModel):
 
             callback.on_training_start(locals(), globals())
 
-            for update in range(1, total_timesteps // self.n_batch + 1):
-
+            def full_step(update):
                 callback.on_rollout_start()
 
                 # pytype:disable=bad-unpacking
@@ -348,7 +362,7 @@ class ACKTR(ActorCriticRLModel):
 
                 # Early stopping due to the callback
                 if not self.runner.continue_training:
-                    break
+                    return False
 
                 self.ep_info_buf.extend(ep_infos)
                 policy_loss, value_loss, policy_entropy = self._train_step(obs, states, returns, masks, actions, values,
@@ -380,8 +394,7 @@ class ACKTR(ActorCriticRLModel):
             coord.request_stop()
             coord.join(enqueue_threads)
 
-        callback.on_training_end()
-        return self
+        return full_step
 
     def save(self, save_path, cloudpickle=False):
         data = {
